@@ -45,6 +45,11 @@ namespace SingleTactLibrary
                         names.Add(deviceID + " - PPS Sensor");
                         COMNumber.Add(deviceID);
                     }
+                    else
+                    {
+                        names.Add(deviceID + " - Some serial port");
+                        COMNumber.Add(deviceID);
+                    }
                 }
             }
             return (names, COMNumber);

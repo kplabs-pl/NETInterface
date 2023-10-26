@@ -36,8 +36,11 @@ namespace SingleTact_Demo
         private SingleTact activeSingleTact;
         private delegate void CloseMainFormDelegate(); //Used to close the program if hardware is not connected
         private double NBtoForceFactor = 0;
+        private bool convertToPressure = false;
         private DateTime systemStartTime = new DateTime();
         private bool hasStartTime = false;
+
+        private StreamWriter autoSaveOutput = null;
         public GUI()
         {
             string exceptionMessage = null;
@@ -274,13 +277,35 @@ namespace SingleTact_Demo
         /// <param name="measurements"></param>
         private void AddData(double time, double[] measurements, USBdevice_GUI USB)
         {
+            const double Radius = 15.0 / 2;
+            const double Ntopsi = 145.03773773 / (Math.PI * Radius * Radius);
+
             if (NBtoForceFactor != 0)
             {
-                for (int i = 0; i < measurements.Length; i++)
-                    measurements[i] = measurements[i] * NBtoForceFactor / 512;
+                if (convertToPressure)
+                {
+                    for (int i = 0; i < measurements.Length; i++)
+                    {
+                        measurements[i] = measurements[i] * NBtoForceFactor * Ntopsi / 512;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < measurements.Length; i++)
+                        measurements[i] = measurements[i] * NBtoForceFactor / 512;
+                }
             }
 
-            memorySpaceUse = USB.dataBuffer.AddData(measurements, time);  // update 
+            memorySpaceUse = USB.dataBuffer.AddData(measurements, time);  // update
+
+            if(autoSaveOutput != null)
+            {
+                foreach(var measurement in measurements)
+                {
+                    autoSaveOutput.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.f};{measurement}");
+                }
+                autoSaveOutput.Flush();
+            }
         }
 
         private void updateGraph(USBdevice_GUI USB)
@@ -789,16 +814,29 @@ namespace SingleTact_Demo
             {
                 tempFactor = 0;
             }
-            if (tempFactor == NBtoForceFactor)
+            if (tempFactor == NBtoForceFactor && convertToPressure == cbConvertToPressure.Checked)
                 return;
             NBtoForceFactor = tempFactor;
+            convertToPressure = cbConvertToPressure.Checked;
             double greenBoxMax = 0;
             if (NBtoForceFactor != 0)
             {
-                graph_.GraphPane.YAxis.Title.Text = "Force (N)";
-                graph_.GraphPane.YAxis.Scale.Max = 1.5 * NBtoForceFactor; //Valid range
-                graph_.GraphPane.YAxis.Scale.Min = -0.5 * NBtoForceFactor;
-                greenBoxMax = NBtoForceFactor;
+                if (cbConvertToPressure.Checked)
+                {
+                    // TODO
+                    graph_.GraphPane.YAxis.Title.Text = "Pressure (psi)";
+                    graph_.GraphPane.YAxis.Scale.Max = 10 * NBtoForceFactor; //Valid range
+                    graph_.GraphPane.YAxis.Scale.Min = 0 * NBtoForceFactor;
+                    greenBoxMax = NBtoForceFactor;
+                }
+                else
+                {
+                    graph_.GraphPane.YAxis.Title.Text = "Force (N)";
+                    graph_.GraphPane.YAxis.Scale.Max = 1.5 * NBtoForceFactor; //Valid range
+                    graph_.GraphPane.YAxis.Scale.Min = -0.5 * NBtoForceFactor;
+                    greenBoxMax = NBtoForceFactor;
+                }
+                
             }
             else
             {
@@ -858,6 +896,32 @@ namespace SingleTact_Demo
                     SetSettingsButton.Enabled = true;
                     i2cAddressInputComboBox_.Enabled = false;
                 }
+            }
+        }
+
+        private void btnStartStopAutosave_Click(object sender, EventArgs e)
+        {
+            if(autoSaveOutput == null)
+            {
+                using (var dialog = new SaveFileDialog())
+                {
+                    dialog.Filter = "*.csv|*.csv";
+                    dialog.RestoreDirectory = true;
+                    dialog.FileName = $"SingleTact Data {DateTime.Now:yyyy-MM-dd HHmmss}.csv";
+                    if (dialog.ShowDialog() != DialogResult.OK)
+                    {
+                        return;
+                    }
+                    autoSaveOutput = new StreamWriter(dialog.OpenFile());
+                    autoSaveOutput.WriteLine("Time;Value");
+                }
+                btnStartStopAutosave.Text = "Stop autosave";
+            }
+            else
+            {
+                btnStartStopAutosave.Text = "Start autosave";
+                autoSaveOutput.Close();
+                autoSaveOutput = null;
             }
         }
     }
